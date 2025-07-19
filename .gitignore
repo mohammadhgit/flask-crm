@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.py,cover
+.Python
+env/
+venv/
+.venv/
+
+# Database
+*.db
+*.sqlite
+*.db-journal
+*.sql
+/migrations/
+
+# Environment
+.env
+.venv
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Flask
+instance/
+*.log
