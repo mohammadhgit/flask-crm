@@ -41,16 +41,16 @@
                         </thead>
                         <tbody>
                             {% for customer in customers %}
-                            <tr class="clickable-row {% if customer.futureContact < today %}overdue{% elif customer.futureContact == today %}today{% endif %}" 
+                            <tr class="clickable-row {% if customer.future_contact < today %}overdue{% elif customer.future_contact == today %}today{% endif %}" 
                                 data-href="{{ url_for('customer_detail', customer_id=customer.id) }}">
                                 <td>{{ customer.id }}</td>
                                 <td>{{ customer.fullName }}</td>
                                 <td>{{ customer.phone }}</td>
-                                <td>{{ customer.futureContact }}</td>
+                                <td>{{ customer.future_contact }}</td>
                                 <td>
-                                    {% if customer.futureContact < today %}
+                                    {% if customer.future_contact < today %}
                                     <span class="badge bg-danger">Overdue</span>
-                                    {% elif customer.futureContact == today %}
+                                    {% elif customer.future_contact == today %}
                                     <span class="badge bg-success">Today</span>
                                     {% endif %}
                                 </td>

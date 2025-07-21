@@ -1,154 +1,124 @@
 from flask import Flask, render_template, request, redirect, url_for
+from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timedelta
-import random
+from sqlalchemy import or_
 
 app = Flask(__name__)
 
-# Generate sample customer data
-def generate_sample_customers(num=50):
-    customers = []
-    first_names = ["John", "Jane", "Michael", "Emily", "David", "Sarah"]
-    last_names = ["Smith", "Johnson", "Williams", "Brown", "Jones"]
-    plans = ["Basic", "Standard", "Premium", "Enterprise"]
-    experts = ["Alex", "Sam", "Taylor", "Jordan", "Casey"]
-    payment_statuses = ["paid", "unpaid", "partial"]
-    
-    for i in range(1, num+1):
-        full_name = f"{random.choice(first_names)} {random.choice(last_names)}"
-        customer = {
-            "id": i,
-            "fullName": full_name,
-            "phone": f"09{random.randint(100000000, 999999999)}",
-            "plan": random.choice(plans),
-            "expert": random.choice(experts),
-            "date": datetime(2023, random.randint(1, 12), random.randint(1, 28)).strftime("%Y-%m-%d"),
-            "futureContact": (datetime.now() + timedelta(days=random.randint(1, 30))).strftime("%Y-%m-%d"),
-            "paids": random.choice(payment_statuses),
-            "totalSend": random.randint(0, 100),
-            # Include other fields you might need for the detail page
-            "sendStatus": random.choice(["sent", "pending", "failed"]),
-            "workDone": random.choice(["completed", "in progress", "not started"]),
-            "goal": random.choice(["weight loss", "muscle gain", "maintenance"]),
-            "details": f"Details for {full_name}",
-            "hasSent": random.choice([True, False]),
-            "allSend": random.choice([True, False])
-        }
-        customers.append(customer)
-    
-    return customers
+# SQLAlchemy Configuration
+app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql://dashadmin:123456789@localhost/customer_dashboard'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db = SQLAlchemy(app)
 
-# Our in-memory "database"
-customers_data = generate_sample_customers()
+# Models
+class Customer(db.Model):
+    __tablename__ = 'customers'
+    id = db.Column(db.Integer, primary_key=True)
+    full_name = db.Column(db.String(100), nullable=False)
+    phone = db.Column(db.String(20), unique=True, nullable=False)
+    plan = db.Column(db.String(50))
+    expert = db.Column(db.String(50))
+    signup_date = db.Column(db.Date)
+    future_contact = db.Column(db.Date)
+    payment_status = db.Column(db.String(20), default='unpaid')
+    total_send = db.Column(db.Integer, default=0)
+    onboarded = db.Column(db.Boolean, default=False)
+    reports = db.relationship('Report', backref='customer', lazy=True)
 
+class Report(db.Model):
+    __tablename__ = 'reports'
+    id = db.Column(db.Integer, primary_key=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey('customers.id'))
+    date = db.Column(db.Date, default=datetime.utcnow)
+    expert = db.Column(db.String(50))
+    report_type = db.Column(db.String(50))
+    work_done = db.Column(db.String(100))
+    goal = db.Column(db.String(100))
+    description = db.Column(db.Text)
+    future_contact_date = db.Column(db.Date)
+    problem_type = db.Column(db.String(20), default='None')
+
+# Create tables
+with app.app_context():
+    db.create_all()
+# TypeError: '<' not supported between instances of 'datetime.date' and 'str'
+# Routes
 @app.route('/')
 def dashboard():
-    search_query = request.args.get('search', '').lower()
-    start_date = request.args.get('start_date')
-    end_date = request.args.get('end_date')
-    expert_filter = request.args.get('expert', '')  # New expert filter
+    query = Customer.query
     
-    filtered_customers = customers_data
+    # Apply filters
+    if request.args.get('search'):
+        search = request.args['search']
+        query = query.filter(or_(
+            Customer.full_name.ilike(f'%{search}%'),
+            Customer.phone.ilike(f'%{search}%')
+        ))
     
-    # Apply search filter
-    if search_query:
-        filtered_customers = [
-            c for c in filtered_customers 
-            if (search_query in c['fullName'].lower() or 
-                search_query in c['phone'].lower())
-        ]
+    if request.args.get('expert'):
+        query = query.filter_by(expert=request.args['expert'])
     
-    # Apply date filter
-    if start_date:
-        filtered_customers = [c for c in filtered_customers if c['date'] >= start_date]
-    if end_date:
-        filtered_customers = [c for c in filtered_customers if c['date'] <= end_date]
+    if request.args.get('start_date'):
+        query = query.filter(Customer.signup_date >= request.args['start_date'])
     
-    # Apply expert filter
-    if expert_filter:
-        filtered_customers = [c for c in filtered_customers if c['expert'] == expert_filter]
+    if request.args.get('end_date'):
+        query = query.filter(Customer.signup_date <= request.args['end_date'])
+    
+    customers = query.all()
+    experts = db.session.query(Customer.expert).distinct().all()
     
     # Calculate due contacts count
-    today = datetime.now().strftime("%Y-%m-%d")
-    due_contacts_count = len([
-        c for c in customers_data 
-        if c.get('futureContact') and c['futureContact'] <= today
-    ])
+    today = datetime.now().date()
+    due_contacts_count = Customer.query.filter(
+        Customer.future_contact <= today
+    ).count()
     
-    # Get unique experts for dropdown
-    experts = sorted(list({c['expert'] for c in customers_data if c.get('expert')}))
-    
-        # Calculate due contacts count
-    today = datetime.now().strftime("%Y-%m-%d")
-    due_contacts_count = len([
-        c for c in customers_data 
-        if c.get('futureContact') and c['futureContact'] <= today
-    ])
-    
-    return render_template('dashboard.html', 
-                         customers=filtered_customers,
-                         due_contacts_count=due_contacts_count,
-                         experts=expert_filter,
-                         all_experts=experts)
-    # return render_template('dashboard.html', customers=filtered_customers)
+    return render_template('dashboard.html',
+                        customers=customers,
+                        experts=[e[0] for e in experts if e[0]],
+                        request_args=request.args,
+                        due_contacts_count=due_contacts_count)
 
 @app.route('/customer/<int:customer_id>')
 def customer_detail(customer_id):
-    customer = next((c for c in customers_data if c['id'] == customer_id), None)
-    if not customer:
-        return "Customer not found", 404
-    
-    return render_template('customer_detail.html', customer=customer)
+    customer = Customer.query.get_or_404(customer_id)
+    reports = Report.query.filter_by(customer_id=customer_id).order_by(Report.date.desc()).all()
+    return render_template('customer_detail.html',
+                         customer=customer,
+                         reports=reports)
+
 @app.route('/customer/<int:customer_id>/add_report', methods=['POST'])
 def add_report(customer_id):
-    customer = next((c for c in customers_data if c['id'] == customer_id), None)
-    if not customer:
-        return "Customer not found", 404
-    
-    new_report = {
-        "id": len(customer.get('reports', [])) + 1,
-        "date": datetime.now().strftime("%Y-%m-%d"),
-        "expert": request.form.get('expert'),
-        "type": request.form.get('report_type'),
-        "workDone": request.form.get('work_done'),
-        "goal": request.form.get('goal'),
-        "description": request.form.get('description'),
-        "futureContact": request.form.get('future_contact')
-    }
-    
-    if 'reports' not in customer:
-        customer['reports'] = []
-    customer['reports'].append(new_report)
-    
-    # Update the customer's expert if changed in the report
-    customer['expert'] = new_report['expert']
-    
+    report = Report(
+        customer_id=customer_id,
+        # date=datetime.strptime(request.form['date'], '%Y-%m-%d') if request.form['date'] else datetime.utcnow(),
+        expert=request.form['expert'],
+        report_type=request.form['report_type'],
+        work_done=request.form['work_done'],
+        goal=request.form['goal'],
+        description=request.form['description'],
+        future_contact_date=datetime.strptime(request.form['future_contact'], '%Y-%m-%d'),
+        problem_type=request.form.get('problem_type', 'None')
+    )
+    db.session.add(report)
+    db.session.commit()
     return redirect(url_for('customer_detail', customer_id=customer_id))
-# customer['onboarded'] = customer['paids'] == 'paid' and customer['hasSent']
-
 
 @app.route('/due-contacts')
 def due_contacts():
-    today = datetime.now().strftime("%Y-%m-%d")
-    
-    # Get customers with futureContact <= today
-    due_customers = [
-        c for c in customers_data 
-        if c.get('futureContact') and c['futureContact'] <= today
-    ]
-    
-    return render_template('due_contacts.html', customers=due_customers, today=today)
+    today = datetime.now().date()
+    customers = Customer.query.filter(
+        Customer.future_contact <= today
+    ).order_by(Customer.future_contact.asc()).all()
+    return render_template('due_contacts.html',
+                         customers=customers,
+                         today=today.strftime('%Y-%m-%d'))
 
-@app.route('/customer/<int:customer_id>/mark-contacted', methods=['POST'])
+@app.route('/customer/<int:customer_id>/mark_contacted', methods=['POST'])
 def mark_contacted(customer_id):
-    customer = next((c for c in customers_data if c['id'] == customer_id), None)
-    if not customer:
-        return "Customer not found", 404
-    
-    # Update future contact date based on form input
-    new_contact_date = request.form.get('new_contact_date')
-    if new_contact_date:
-        customer['futureContact'] = new_contact_date
-    
+    customer = Customer.query.get_or_404(customer_id)
+    customer.future_contact = datetime.strptime(request.form['new_contact_date'], '%Y-%m-%d').date()
+    db.session.commit()
     return redirect(url_for('customer_detail', customer_id=customer_id))
 
 if __name__ == '__main__':

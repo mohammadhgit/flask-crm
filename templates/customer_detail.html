@@ -41,7 +41,7 @@
         <div class="col-md-6">
             <label for="new_contact_date" class="form-label">Next Contact Date</label>
             <input type="date" class="form-control" id="new_contact_date" name="new_contact_date"
-                   value="{{ customer.futureContact }}" required>
+                   value="{{ customer.future_contact }}" required>
         </div>
         <div class="col-md-6 d-flex align-items-end">
             <button type="submit" class="btn btn-success me-2">
@@ -117,7 +117,7 @@
                                 <td>{{ report.workDone }}</td>
                                 <td>{{ report.goal }}</td>
                                 <td>{{ report.description }}</td>
-                                <td>{{ report.futureContact }}</td>
+                                <td>{{ report.future_contact }}</td>
                                 <td>
                                     <button class="btn btn-sm btn-outline-primary">Edit</button>
                                 </td>
